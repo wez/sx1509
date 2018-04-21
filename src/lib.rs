@@ -1,6 +1,69 @@
 /*!
 A platform agnostic Rust friver for the [sx1509], based on the
 [`embedded-hal`] traits.
+
+## The Device
+
+The [sx1509] is a GPIO expander that also providers LED driver
+and keypad scanning functionality.  The device has two banks
+of 8 GPIO pins.
+
+## Supported features
+
+At the time of writing, the support is very bare bones: you can
+reset the device and configure basic GPIO functions by operating
+on a bank at a time.
+
+## Future
+
+There's scope for some interesting API design choices; for example,
+it would be nice to expose the individual GPIO pins as instances
+that implement the GPIO traits from [`embedded-hal`] so that they
+could in turn be used to interface with other drivers.
+
+The keypad and LED driver functionality has some potential for
+nice type safe API design by moving pins/banks into different
+modes.
+
+Care needs to be taken to find and ergnomic and zero cost
+way to express these APIs.
+
+For the moment we just have a fairly dumb pass through!
+
+## Usage
+
+Import this crate an an `embedded_hal` implementation:
+
+```
+extern crate atsamd21_hal as hal;
+extern crate sx1509;
+```
+
+Initialize the I2C bus (differs between the various hal implementations):
+
+```no_run
+let mut i2c = I2CMaster3::new(
+    &clocks,
+    400.khz(),
+    peripherals.SERCOM3,
+    &mut peripherals.PM,
+    &mut peripherals.GCLK,
+    // Metro M0 express has I2C on pins PA22, PA23
+    Sercom3Pad0::Pa22(pins.pa22.into_function_c(&mut pins.port)),
+    Sercom3Pad1::Pa23(pins.pa23.into_function_c(&mut pins.port)),
+);
+```
+
+and then instantiate the driver:
+
+```no_run
+let mut expander = sx1509::Sx1509::new(&mut i2c, sx1509::DEFAULT_ADDRESS);
+expander.software_reset()?;
+expander.set_bank_a_direction(0)?;
+// read the pins from bank a
+let pins = expander.get_bank_a_data()?;
+```
+
 */
 #![no_std]
 extern crate embedded_hal as hal;
@@ -239,6 +302,9 @@ impl<'a, I2C, E> Sx1509<'a, I2C>
 where
     I2C: WriteRead<Error = E> + Write<Error = E>,
 {
+    /// Create an instance.  No implicit initialization is performed.
+    /// You will likely want to perform a `software_reset` as the
+    /// next step.
     pub fn new(i2c: &'a mut I2C, address: u8) -> Self {
         Self { i2c, address }
     }
@@ -273,7 +339,7 @@ where
     /// Set the direction for each pin in BankB.
     /// Each 1 bit will be set to output, each 0 bit will
     /// be set to input.
-    pub fn set_bank_b_direction_output(&mut self, mask: u8) -> Result<(), E> {
+    pub fn set_bank_b_direction(&mut self, mask: u8) -> Result<(), E> {
         self.write(Register::RegDirB, !mask)
     }
 
