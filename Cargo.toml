@@ -1,0 +1,11 @@
+[package]
+name = "sx1509"
+version = "0.1.0"
+authors = ["Wez Furlong"]
+keywords = ["embedded-hal-driver"]
+categories = ["embedded", "no-std", "hardware-support"]
+description = "A platform agnostic driver for the SX1509"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+embedded-hal = "0.1"
