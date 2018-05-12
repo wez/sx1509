@@ -6,6 +6,8 @@ keywords = ["embedded-hal-driver"]
 categories = ["embedded", "no-std", "hardware-support"]
 description = "A platform agnostic driver for the SX1509"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/wez/sx1509"
 
 [dependencies]
-embedded-hal = "0.1"
+embedded-hal = "~0.1"
