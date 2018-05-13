@@ -10,4 +10,4 @@ readme = "README.md"
 repository = "https://github.com/wez/sx1509"
 
 [dependencies]
-embedded-hal = "~0.1"
+embedded-hal = "~0.2"
