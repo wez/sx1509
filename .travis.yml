@@ -4,3 +4,7 @@ rust:
   - stable
   - beta
 cache: cargo
+script:
+  - cargo build --verbose
+  - cargo test --lib --bins --examples --tests
+

@@ -34,15 +34,15 @@ For the moment we just have a fairly dumb pass through!
 
 Import this crate an an `embedded_hal` implementation:
 
-```
-extern crate atsamd21_hal as hal;
+```no_run
+extern crate metro_m0 as hal;
 extern crate sx1509;
 ```
 
 Initialize the I2C bus (differs between the various hal implementations):
 
 ```no_run
-let mut i2c = I2CMaster3::new(
+let mut i2c = hal::I2CMaster3::new(
     &clocks,
     400.khz(),
     peripherals.SERCOM3,
