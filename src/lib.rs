@@ -485,4 +485,16 @@ where
     pub fn set_bank_b_pullup(&mut self, mask: u8) -> Result<(), E> {
         self.write(Register::RegPullUpB, mask)
     }
+
+    /// Set the pull-down for each pin in BankA.
+    /// Each 1 bit will have pull down enabled, 0 disabled
+    pub fn set_bank_a_pulldown(&mut self, mask: u8) -> Result<(), E> {
+        self.write(Register::RegPullDownA, mask)
+    }
+
+    /// Set the pull-down for each pin in BankB.
+    /// Each 1 bit will have pull down enabled, 0 disabled
+    pub fn set_bank_b_pulldown(&mut self, mask: u8) -> Result<(), E> {
+        self.write(Register::RegPullDownB, mask)
+    }
 }
