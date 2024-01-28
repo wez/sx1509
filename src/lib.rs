@@ -308,6 +308,27 @@ pub enum Register {
     RegReset = 0x7D,
 }
 
+pub enum Direction {
+    Input = 0,
+    Output = 1,
+}
+
+pub enum OscillatorFrequency {
+    Off = 0,
+    External = 1,
+    Internal = 2,
+}
+
+pub enum LEDDriverMode {
+    Linear = 0,
+    Logarithmic = 1,
+}
+
+pub enum EnabledState {
+    On = 0,
+    Off = 1,
+}
+
 /// The default address of the SparkFun board, with no jumpers
 /// applied to alter its address.
 pub const DEFAULT_ADDRESS: u8 = 0x3e;
@@ -365,10 +386,7 @@ where
     /// as no such workflows are supported today.
     /// You probably want the `borrow` method instead.
     pub fn take(self, i2c: I2C) -> Owned<I2C> {
-        Owned {
-            state: self,
-            i2c: i2c,
-        }
+        Owned { state: self, i2c: i2c }
     }
 
     /// Borrow ownership of the bus and return a `Borrowed` instance that
@@ -409,11 +427,17 @@ where
         self.i2c.write(self.state.address, &[register as u8, value])
     }
 
+    /// Read a value from the register
+    pub fn read(&mut self, register: Register) -> Result<u8, E> {
+        let mut buf = [0u8; 1];
+        self.i2c.write_read(self.state.address, &[register as u8], &mut buf)?;
+        Ok(buf[0])
+    }
+
     /// Read a 16-bit value from the register and its successor
     pub fn read_16(&mut self, register: Register) -> Result<u16, E> {
         let mut buf = [0u8; 2];
-        self.i2c
-            .write_read(self.state.address, &[register as u8], &mut buf)?;
+        self.i2c.write_read(self.state.address, &[register as u8], &mut buf)?;
         Ok((buf[0] as u16) << 8 | buf[1] as u16)
     }
 
@@ -484,5 +508,250 @@ where
     /// Each 1 bit will have pull up enabled, 0 disabled
     pub fn set_bank_b_pullup(&mut self, mask: u8) -> Result<(), E> {
         self.write(Register::RegPullUpB, mask)
+    }
+
+    /// Set the pull-down for each pin in BankA.
+    /// Each 1 bit will have pull down enabled, 0 disabled
+    pub fn set_bank_a_pulldown(&mut self, mask: u8) -> Result<(), E> {
+        self.write(Register::RegPullDownA, mask)
+    }
+
+    /// Set the pull-down for each pin in BankB.
+    /// Each 1 bit will have pull down enabled, 0 disabled
+    pub fn set_bank_b_pulldown(&mut self, mask: u8) -> Result<(), E> {
+        self.write(Register::RegPullDownB, mask)
+    }
+
+    pub fn configure_clock(&mut self, freq: OscillatorFrequency, oscio: Direction, oscio_freq: u8) -> Result<(), E> {
+        let val = ((freq as u8) << 5 | (oscio as u8) << 4 | (oscio_freq & 0xF)) as u8;
+        self.write(Register::RegClock, val)
+    }
+
+    pub fn set_bank_b_led_driver_mode(&mut self, mode: LEDDriverMode) -> Result<(), E> {
+        let mut val = self.read(Register::RegMisc)?;
+        val &= 0x7f;
+        val |= (mode as u8) << 7;
+        self.write(Register::RegMisc, val)
+    }
+
+    pub fn get_bank_b_led_driver_mode(&mut self) -> Result<LEDDriverMode, E> {
+        let val = self.read(Register::RegMisc)?;
+        match val >> 7 {
+            x if x == LEDDriverMode::Linear as u8 => Ok(LEDDriverMode::Linear),
+            x if x == LEDDriverMode::Logarithmic as u8 => Ok(LEDDriverMode::Logarithmic),
+            _ => Ok(LEDDriverMode::Linear), // TODO make this an error
+        }
+    }
+
+    pub fn set_bank_a_led_driver_mode(&mut self, mode: LEDDriverMode) -> Result<(), E> {
+        let mut val = self.read(Register::RegMisc)?;
+        val &= 0xf7;
+        val |= (mode as u8) << 3;
+        self.write(Register::RegMisc, val)
+    }
+
+    pub fn get_bank_a_led_driver_mode(&mut self) -> Result<LEDDriverMode, E> {
+        let val = self.read(Register::RegMisc)?;
+        match (val >> 3) & 1 {
+            x if x == LEDDriverMode::Linear as u8 => Ok(LEDDriverMode::Linear),
+            x if x == LEDDriverMode::Logarithmic as u8 => Ok(LEDDriverMode::Logarithmic),
+            _ => Ok(LEDDriverMode::Linear), // TODO make this an error
+        }
+    }
+
+    pub fn set_bank_a_led_driver_enable(&mut self, val: u8) -> Result<(), E> {
+        self.write(Register::RegLEDDriverEnableA, val)
+    }
+
+    pub fn set_bank_b_led_driver_enable(&mut self, val: u8) -> Result<(), E> {
+        self.write(Register::RegLEDDriverEnableB, val)
+    }
+
+    pub fn set_led_driver_frequency(&mut self, freq: u8) -> Result<(), E> {
+        let mut val = self.read(Register::RegMisc)?;
+        val &= 0x8f;
+        val |= (freq & 0x7) << 4;
+        self.write(Register::RegMisc, val)
+    }
+
+    pub fn get_led_driver_frequency(&mut self) -> Result<u8, E> {
+        let mut val = self.read(Register::RegMisc)?;
+        val &= 0x70;
+        Ok(val >> 4)
+    }
+
+    pub fn pwm(&mut self, pin: u8, intensity: u8) -> Result<(), E> {
+        let registers = self.get_pin_registers(pin);
+        if let Some(reg) = registers.1 {
+            self.write(reg, intensity)
+        } else {
+            Ok(()) // TODO error
+        }
+    }
+
+    pub fn blink(&mut self, pin: u8, time_on: u8, time_off: u8, on_intensity: u8, off_intensity: u8) -> Result<(), E> {
+        let registers = self.get_pin_registers(pin);
+        match registers {
+            (Some(ton), Some(ion), Some(off), _, _) => {
+                self.write(ton, time_on)?;
+                self.write(ion, on_intensity)?;
+                self.write(off, ((time_off & 0x1f) << 3) | (off_intensity & 0x7))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub fn breathe(
+        &mut self,
+        pin: u8,
+        time_on: u8,
+        time_off: u8,
+        on_intensity: u8,
+        off_intensity: u8,
+        rise_time: u8,
+        fall_time: u8,
+    ) -> Result<(), E> {
+        let registers = self.get_pin_registers(pin);
+        match registers {
+            (Some(ton), Some(ion), Some(off), Some(rise), Some(fall)) => {
+                self.write(ton, time_on)?;
+                self.write(ion, on_intensity)?;
+                self.write(off, ((time_off & 0x1f) << 3) | (off_intensity & 0x7))?;
+                self.write(rise, rise_time & 0x1f)?;
+                self.write(fall, fall_time & 0x1f)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn get_pin_registers(
+        &mut self,
+        pin: u8,
+    ) -> (
+        Option<Register>,
+        Option<Register>,
+        Option<Register>,
+        Option<Register>,
+        Option<Register>,
+    ) {
+        match pin {
+            0 => (
+                Some(Register::RegTOn0),
+                Some(Register::RegIOn0),
+                Some(Register::RegOff0),
+                None,
+                None,
+            ),
+            1 => (
+                Some(Register::RegTOn1),
+                Some(Register::RegIOn1),
+                Some(Register::RegOff1),
+                None,
+                None,
+            ),
+            2 => (
+                Some(Register::RegTOn2),
+                Some(Register::RegIOn2),
+                Some(Register::RegOff2),
+                None,
+                None,
+            ),
+            3 => (
+                Some(Register::RegTOn3),
+                Some(Register::RegIOn3),
+                Some(Register::RegOff3),
+                None,
+                None,
+            ),
+            4 => (
+                Some(Register::RegTOn4),
+                Some(Register::RegIOn4),
+                Some(Register::RegOff4),
+                Some(Register::RegTRise4),
+                Some(Register::RegTFall4),
+            ),
+            5 => (
+                Some(Register::RegTOn5),
+                Some(Register::RegIOn5),
+                Some(Register::RegOff5),
+                Some(Register::RegTRise5),
+                Some(Register::RegTFall5),
+            ),
+
+            6 => (
+                Some(Register::RegTOn6),
+                Some(Register::RegIOn6),
+                Some(Register::RegOff6),
+                Some(Register::RegTRise6),
+                Some(Register::RegTFall6),
+            ),
+
+            7 => (
+                Some(Register::RegTOn7),
+                Some(Register::RegIOn7),
+                Some(Register::RegOff7),
+                Some(Register::RegTRise7),
+                Some(Register::RegTFall7),
+            ),
+            8 => (
+                Some(Register::RegTOn8),
+                Some(Register::RegIOn8),
+                Some(Register::RegOff8),
+                None,
+                None,
+            ),
+            9 => (
+                Some(Register::RegTOn9),
+                Some(Register::RegIOn9),
+                Some(Register::RegOff9),
+                None,
+                None,
+            ),
+            10 => (
+                Some(Register::RegTOn10),
+                Some(Register::RegIOn10),
+                Some(Register::RegOff10),
+                None,
+                None,
+            ),
+            11 => (
+                Some(Register::RegTOn11),
+                Some(Register::RegIOn11),
+                Some(Register::RegOff11),
+                None,
+                None,
+            ),
+            12 => (
+                Some(Register::RegTOn12),
+                Some(Register::RegIOn12),
+                Some(Register::RegOff12),
+                Some(Register::RegTRise12),
+                Some(Register::RegTFall12),
+            ),
+            13 => (
+                Some(Register::RegTOn13),
+                Some(Register::RegIOn13),
+                Some(Register::RegOff13),
+                Some(Register::RegTRise13),
+                Some(Register::RegTFall13),
+            ),
+
+            14 => (
+                Some(Register::RegTOn14),
+                Some(Register::RegIOn14),
+                Some(Register::RegOff14),
+                Some(Register::RegTRise14),
+                Some(Register::RegTFall14),
+            ),
+
+            15 => (
+                Some(Register::RegTOn15),
+                Some(Register::RegIOn15),
+                Some(Register::RegOff15),
+                Some(Register::RegTRise15),
+                Some(Register::RegTFall15),
+            ),
+            _ => (None, None, None, None, None),
+        }
     }
 }
